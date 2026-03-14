@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+@theme {
+  /* Oak bark palette */
+  --color-oak-50: #faf8f5;
+  --color-oak-100: #f3efe8;
+  --color-oak-200: #e8e0d4;
+  --color-oak-300: #d4c4ad;
+  --color-oak-400: #bfa684;
+  --color-oak-500: #a68a64;
+  --color-oak-600: #8b6f4e;
+  --color-oak-700: #6f5739;
+  --color-oak-800: #5a4730;
+  --color-oak-900: #3d3021;
+
+  /* Accent — warm amber for highlights */
+  --color-accent-50: #fffbeb;
+  --color-accent-100: #fef3c7;
+  --color-accent-200: #fde68a;
+  --color-accent-300: #fcd34d;
+  --color-accent-400: #fbbf24;
+  --color-accent-500: #f59e0b;
+
+  /* Surfaces — clean white */
+  --color-surface: #ffffff;
+  --color-surface-alt: #ffffff;
+  --color-surface-hover: #faf8f5;
+  --color-border: #e8e0d4;
+  --color-border-dark: #d4c4ad;
+
+  /* Text */
+  --color-text: #2c1e10;
+  --color-text-secondary: #5a4730;
+  --color-text-muted: #a68a64;
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    background-color: #ffffff;
+    color: var(--color-text);
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  button,
+  a,
+  select,
+  [role="button"],
+  label[for],
+  input[type="checkbox"],
+  input[type="radio"],
+  summary {
+    cursor: pointer;
+  }
+}

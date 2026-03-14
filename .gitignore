@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Environment
+backend/.env
+
+# Node
+frontend/node_modules/
+frontend/test-results/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude
+.claude/
+
+# OS
+Thumbs.db
+.DS_Store
