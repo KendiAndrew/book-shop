@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from typing import Optional
-from database import get_pool
+from database import get_conn
 from auth.security import require_admin
 
 router = APIRouter(prefix="/api/books", tags=["Books"])
@@ -51,8 +51,7 @@ async def get_books(
     page: int = 1,
     limit: int = 20,
 ):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn("guest") as conn:
         conditions = []
         params = []
         idx = 1
@@ -128,8 +127,7 @@ async def get_books(
 
 @router.get("/{book_id}")
 async def get_book(book_id: int):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn("guest") as conn:
         row = await conn.fetchrow(
             """SELECT b.*, a.firstname || ' ' || a.lastname AS author,
                       g.genrename AS genre, p.publishername AS publisher,
@@ -149,8 +147,7 @@ async def get_book(book_id: int):
 
 @router.post("", dependencies=[Depends(require_admin)])
 async def create_book(body: BookCreate):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn("admin") as conn:
         row = await conn.fetchrow(
             """INSERT INTO books (title, authorid, genreid, publisherid, format, quantity, price,
                                   supplierid, publicationyear, languageid, pagecount, cover_url)
@@ -164,8 +161,7 @@ async def create_book(body: BookCreate):
 
 @router.put("/{book_id}", dependencies=[Depends(require_admin)])
 async def update_book(book_id: int, body: BookUpdate):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn("admin") as conn:
         existing = await conn.fetchval("SELECT 1 FROM books WHERE bookid = $1", book_id)
         if not existing:
             raise HTTPException(status_code=404, detail="Книгу не знайдено")
@@ -191,8 +187,7 @@ async def update_book(book_id: int, body: BookUpdate):
 
 @router.delete("/{book_id}", dependencies=[Depends(require_admin)])
 async def delete_book(book_id: int):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn("admin") as conn:
         result = await conn.execute("DELETE FROM books WHERE bookid = $1", book_id)
         if result == "DELETE 0":
             raise HTTPException(status_code=404, detail="Книгу не знайдено")

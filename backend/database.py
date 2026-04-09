@@ -1,5 +1,6 @@
 import os
 import asyncpg
+from contextlib import asynccontextmanager
 
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
@@ -8,6 +9,12 @@ DB_CONFIG = {
     "password": os.getenv("DB_PASSWORD", "postgres"),
     "database": os.getenv("DB_NAME", "book_shop"),
 }
+
+ROLE_MAP = {
+    "admin": "bookshop_admin",
+    "user": "bookshop_user",
+}
+GUEST_ROLE = "bookshop_guest"
 
 pool: asyncpg.Pool | None = None
 
@@ -24,3 +31,23 @@ async def close_pool():
     if pool:
         await pool.close()
         pool = None
+
+
+@asynccontextmanager
+async def get_conn(role: str | None = None):
+    """Acquire a DB connection with PostgreSQL role set via SET ROLE.
+
+    role=None  -> no SET ROLE (used for auth endpoints)
+    role="admin"/"user" -> maps to bookshop_admin / bookshop_user
+    role=anything else  -> bookshop_guest
+    """
+    p = await get_pool()
+    async with p.acquire() as conn:
+        if role is not None:
+            db_role = ROLE_MAP.get(role, GUEST_ROLE)
+            await conn.execute(f"SET ROLE {db_role}")
+        try:
+            yield conn
+        finally:
+            if role is not None:
+                await conn.execute("RESET ROLE")

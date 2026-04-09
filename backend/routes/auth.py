@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
-from database import get_pool
+from database import get_conn
 from auth.security import hash_password, verify_password, create_access_token
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
@@ -23,8 +23,7 @@ class LoginBody(BaseModel):
 
 @router.post("/register")
 async def register(body: RegisterBody):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn() as conn:
         # check username
         exists = await conn.fetchval("SELECT 1 FROM users WHERE username = $1", body.username)
         if exists:
@@ -56,8 +55,7 @@ async def register(body: RegisterBody):
 
 @router.post("/login")
 async def login(body: LoginBody):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn() as conn:
         row = await conn.fetchrow(
             """SELECT u.userid, u.username, u.password_hash, u.role, u.clientid, u.employeeid
                FROM users u WHERE u.username = $1""",
@@ -94,8 +92,7 @@ async def me(token: str):
     if not payload:
         raise HTTPException(status_code=401, detail="Невалідний токен")
 
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn() as conn:
         user = await conn.fetchrow(
             "SELECT userid, username, role, clientid, employeeid FROM users WHERE userid = $1",
             int(payload["sub"]),

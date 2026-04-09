@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from database import get_pool
+from database import get_conn
 from auth.security import require_admin
 
 router = APIRouter(prefix="/api/promotions", tags=["Promotions"])
@@ -17,8 +17,7 @@ class PromotionBody(BaseModel):
 
 @router.get("")
 async def get_promotions():
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn("guest") as conn:
         rows = await conn.fetch(
             """SELECT pr.*, b.title AS book,
                       br.city || ', ' || br.address AS branch
@@ -33,8 +32,7 @@ async def get_promotions():
 @router.post("", dependencies=[Depends(require_admin)])
 async def create_promotion(body: PromotionBody):
     from datetime import date as dt_date
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn("admin") as conn:
         start = dt_date.fromisoformat(body.startdate)
         end = dt_date.fromisoformat(body.enddate)
         row = await conn.fetchrow(
@@ -47,8 +45,7 @@ async def create_promotion(body: PromotionBody):
 
 @router.delete("/{promo_id}", dependencies=[Depends(require_admin)])
 async def delete_promotion(promo_id: int):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn("admin") as conn:
         result = await conn.execute("DELETE FROM promotions WHERE promotionid = $1", promo_id)
         if result == "DELETE 0":
             raise HTTPException(status_code=404, detail="Акцію не знайдено")

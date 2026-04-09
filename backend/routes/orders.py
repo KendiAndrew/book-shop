@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
-from database import get_pool
+from database import get_conn
 from auth.security import require_user, require_admin
 
 router = APIRouter(prefix="/api/orders", tags=["Orders"])
@@ -20,8 +20,7 @@ class OrderItemCreate(BaseModel):
 
 @router.get("")
 async def get_orders(user: dict = Depends(require_user)):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn(user["role"]) as conn:
         if user["role"] == "admin":
             rows = await conn.fetch(
                 """SELECT o.orderid, o.orderdate, o.branchid,
@@ -56,8 +55,7 @@ async def get_orders(user: dict = Depends(require_user)):
 
 @router.get("/{order_id}")
 async def get_order(order_id: int, user: dict = Depends(require_user)):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn(user["role"]) as conn:
         order = await conn.fetchrow(
             """SELECT o.*, c.firstname || ' ' || c.lastname AS client,
                       br.city || ', ' || br.address AS branch
@@ -90,8 +88,7 @@ async def create_order(body: OrderCreate, user: dict = Depends(require_user)):
     if not client_id:
         raise HTTPException(status_code=400, detail="Користувач не прив'язаний до клієнта")
 
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn(user["role"]) as conn:
         async with conn.transaction():
             order = await conn.fetchrow(
                 "INSERT INTO orders (clientid, orderdate, branchid) VALUES ($1, CURRENT_DATE, $2) RETURNING orderid",

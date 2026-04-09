@@ -483,3 +483,53 @@ BEGIN
     VALUES (v_orderid, p_bookid, p_quantity, v_unitprice);
 END;
 $$;
+
+-- ============================================================
+-- 9. ROLES AND GRANTS (database-level access control)
+-- ============================================================
+
+-- Drop existing roles if re-running the script
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'bookshop_admin') THEN
+        REASSIGN OWNED BY bookshop_admin TO postgres;
+        DROP OWNED BY bookshop_admin;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'bookshop_user') THEN
+        REASSIGN OWNED BY bookshop_user TO postgres;
+        DROP OWNED BY bookshop_user;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'bookshop_guest') THEN
+        REASSIGN OWNED BY bookshop_guest TO postgres;
+        DROP OWNED BY bookshop_guest;
+    END IF;
+END $$;
+
+DROP ROLE IF EXISTS bookshop_admin;
+DROP ROLE IF EXISTS bookshop_user;
+DROP ROLE IF EXISTS bookshop_guest;
+
+-- Role: bookshop_admin — full access to all database objects
+CREATE ROLE bookshop_admin NOLOGIN;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO bookshop_admin;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO bookshop_admin;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO bookshop_admin;
+
+-- Role: bookshop_user — read catalog, create orders and payments, update own profile
+CREATE ROLE bookshop_user NOLOGIN;
+GRANT SELECT ON books, authors, genres, publishers, languages, booklinks,
+                branches, promotions, clients, orders, orderdetails, payments TO bookshop_user;
+GRANT SELECT ON booksfull, authorpopularity TO bookshop_user;
+GRANT INSERT ON orders, orderdetails, payments TO bookshop_user;
+GRANT UPDATE ON clients TO bookshop_user;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO bookshop_user;
+
+-- Role: bookshop_guest — read-only access to public catalog data
+CREATE ROLE bookshop_guest NOLOGIN;
+GRANT SELECT ON books, authors, genres, publishers, languages, booklinks,
+                branches, promotions TO bookshop_guest;
+GRANT SELECT ON booksfull TO bookshop_guest;
+
+-- Grant roles to the connecting user (postgres) so SET ROLE works
+GRANT bookshop_admin TO postgres;
+GRANT bookshop_user TO postgres;
+GRANT bookshop_guest TO postgres;

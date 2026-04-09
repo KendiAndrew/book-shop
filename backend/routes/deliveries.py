@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from database import get_pool
+from database import get_conn
 from auth.security import require_admin
 
 router = APIRouter(prefix="/api/deliveries", tags=["Deliveries"])
@@ -15,8 +15,7 @@ class DeliveryCreate(BaseModel):
 
 @router.get("", dependencies=[Depends(require_admin)])
 async def get_deliveries():
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn("admin") as conn:
         rows = await conn.fetch(
             """SELECT d.*, b.title AS book,
                       s.firstname || ' ' || s.lastname AS supplier
@@ -30,8 +29,7 @@ async def get_deliveries():
 
 @router.post("", dependencies=[Depends(require_admin)])
 async def create_delivery(body: DeliveryCreate):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn("admin") as conn:
         row = await conn.fetchrow(
             """INSERT INTO bookdeliveries (supplierid, deliverydate, quantity, bookid, deliveryprice)
                VALUES ($1, CURRENT_DATE, $2, $3, $4) RETURNING deliveryid""",

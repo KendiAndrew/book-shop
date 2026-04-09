@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
-from database import get_pool
+from database import get_conn
 from auth.security import require_admin, require_user
 
 router = APIRouter(prefix="/api/clients", tags=["Clients"])
@@ -16,8 +16,7 @@ class ClientUpdate(BaseModel):
 
 @router.get("", dependencies=[Depends(require_admin)])
 async def get_clients():
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn("admin") as conn:
         rows = await conn.fetch(
             """SELECT c.*, br.city || ', ' || br.address AS branch
                FROM clients c
@@ -32,8 +31,7 @@ async def get_my_profile(user: dict = Depends(require_user)):
     client_id = user.get("clientid")
     if not client_id:
         raise HTTPException(status_code=404, detail="Профіль клієнта не знайдено")
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn(user["role"]) as conn:
         row = await conn.fetchrow(
             """SELECT c.*, br.city || ', ' || br.address AS branch
                FROM clients c JOIN branches br ON c.branchid = br.branchid
@@ -51,8 +49,7 @@ async def update_my_profile(body: ClientUpdate, user: dict = Depends(require_use
     if not client_id:
         raise HTTPException(status_code=400, detail="Профіль клієнта не знайдено")
 
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn(user["role"]) as conn:
         fields = []
         params = []
         idx = 1
