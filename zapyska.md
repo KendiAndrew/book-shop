@@ -622,6 +622,10 @@ JOIN languages l ON b.languageid = l.languageid;
 
 Серед них, наприклад, автоматичне оновлення кількості книг на складі при реєстрації нової поставки від постачальника, контроль наявності достатньої кількості фізичних примірників при оформленні замовлення з пропозицією електронної версії у разі нестачі, а також автоматичне зменшення залишку при додаванні деталей замовлення.
 
+Окрім об'єктів зберігання та обробки даних, у базі даних створено три ролі для розмежування прав доступу на рівні СУБД: bookshop_admin, bookshop_user та bookshop_guest. Кожній ролі призначено відповідний набір привілеїв за допомогою команд GRANT. Роль bookshop_admin має повний доступ (ALL PRIVILEGES) до всіх таблиць, послідовностей та функцій. Роль bookshop_user має право читання (SELECT) каталогу та можливість створення замовлень і платежів (INSERT на orders, orderdetails, payments), а також оновлення власного профілю (UPDATE на clients). Роль bookshop_guest має виключно право читання (SELECT) публічних таблиць каталогу — books, authors, genres, publishers, languages, booklinks, branches, promotions — та представлення booksfull.
+
+Такий підхід забезпечує захист даних на рівні самої СУБД PostgreSQL: навіть у разі обходу перевірок серверного застосунку база даних самостійно заборонить несанкціоновані операції, повертаючи помилку «permission denied». Тексти команд створення ролей та призначення привілеїв наведено у Додатку C.
+
 Тексти команд SQL-запитів для створення представлень наведено у Додатку D, функцій та тригерів збереження цілісності — у Додатку E, а збережених процедур — у Додатку F.
 
 # 7 ЗАПИТИ ДО БАЗИ ДАНИХ ДЛЯ ВИРІШЕННЯ ПОСТАВЛЕНИХ ЗАДАЧ
@@ -863,18 +867,26 @@ SELECT * FROM calculate_sales_dynamics($1);
 4) сервер отримує дані з бази даних за допомогою асинхронного пулу з'єднань asyncpg та повертає їх клієнту у форматі JSON;
 5) React-компонент отримує JSON-відповідь та оновлює стан інтерфейсу без перезавантаження сторінки. Цикл взаємодії на цьому завершується.
 
-Звернення до бази даних посередництвом asyncpg виконується через пул асинхронних з'єднань. Підключення створюється один раз при запуску серверу та використовується повторно для всіх наступних запитів, що значно зменшує накладні витрати на з'єднання. Код підключення до бази даних наведено у лістингу 8.1.
+Звернення до бази даних посередництвом asyncpg виконується через пул асинхронних з'єднань. Підключення створюється один раз при запуску серверу та використовується повторно для всіх наступних запитів, що значно зменшує накладні витрати на з'єднання. Параметри підключення зчитуються зі змінних оточення (.env-файл), що дозволяє не зберігати паролі у вихідному коді. Код модуля підключення до бази даних наведено у лістингу 8.1.
 
 ```python
+import os
 import asyncpg
+from contextlib import asynccontextmanager
 
 DB_CONFIG = {
-    "host": "localhost",
-    "port": 5432,
-    "user": "postgres",
-    "password": "********",
-    "database": "book_shop",
+    "host": os.getenv("DB_HOST", "localhost"),
+    "port": int(os.getenv("DB_PORT", "5432")),
+    "user": os.getenv("DB_USER", "postgres"),
+    "password": os.getenv("DB_PASSWORD", ""),
+    "database": os.getenv("DB_NAME", "book_shop"),
 }
+
+ROLE_MAP = {
+    "admin": "bookshop_admin",
+    "user": "bookshop_user",
+}
+GUEST_ROLE = "bookshop_guest"
 
 pool: asyncpg.Pool | None = None
 
@@ -886,16 +898,23 @@ async def get_pool() -> asyncpg.Pool:
         )
     return pool
 
-async def close_pool():
-    global pool
-    if pool:
-        await pool.close()
-        pool = None
+@asynccontextmanager
+async def get_conn(role: str | None = None):
+    p = await get_pool()
+    async with p.acquire() as conn:
+        if role is not None:
+            db_role = ROLE_MAP.get(role, GUEST_ROLE)
+            await conn.execute(f"SET ROLE {db_role}")
+        try:
+            yield conn
+        finally:
+            if role is not None:
+                await conn.execute("RESET ROLE")
 ```
 
-Лістинг 8.1 — Код модуля підключення до бази даних
+Лістинг 8.1 — Код модуля підключення до бази даних з підтримкою ролей
 
-Функція get_pool() реалізує патерн «ліниве створення»: пул створюється при першому зверненні та зберігається у глобальній змінній. Параметри min_size=2 та max_size=10 визначають мінімальну та максимальну кількість одночасних з'єднань з базою даних.
+Функція get_pool() реалізує патерн «ліниве створення»: пул створюється при першому зверненні та зберігається у глобальній змінній. Параметри min_size=2 та max_size=10 визначають мінімальну та максимальну кількість одночасних з'єднань з базою даних. Асинхронний контекстний менеджер get_conn(role) забезпечує розмежування доступу на рівні СУБД: при отриманні з'єднання з пулу виконується команда SET ROLE, що перемикає сесію на відповідну роль PostgreSQL (bookshop_admin, bookshop_user або bookshop_guest). Після завершення операції виконується RESET ROLE, що повертає з'єднання до початкового стану перед його поверненням у пул.
 
 Для валідації вхідних даних на стороні сервера використовуються Pydantic-моделі. Кожна модель описує набір полів з типами, значеннями за замовчуванням та обов'язковістю. На відміну від підходу ASP.NET з анотаціями валідації у класах моделей, у FastAPI використовуються окремі моделі для створення (BookCreate) та оновлення (BookUpdate). Приклад Pydantic-моделей для сутності «Книга» наведено у лістингу 8.2.
 
@@ -940,15 +959,14 @@ class BookUpdate(BaseModel):
 
 ```python
 from fastapi import APIRouter, HTTPException, Depends
-from database import get_pool
+from database import get_conn
 from auth.security import require_admin
 
 router = APIRouter(prefix="/api/books", tags=["Books"])
 
 @router.post("", dependencies=[Depends(require_admin)])
 async def create_book(body: BookCreate):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn("admin") as conn:
         row = await conn.fetchrow(
             """INSERT INTO books (title, authorid, genreid,
                    publisherid, format, quantity, price,
@@ -967,15 +985,14 @@ async def create_book(body: BookCreate):
 
 Лістинг 8.3 — Ендпоінт створення нової книги
 
-Декоратор @router.post("") визначає HTTP-метод та шлях ендпоінту. Параметр dependencies=[Depends(require_admin)] забезпечує перевірку ролі адміністратора перед виконанням функції. Параметр body: BookCreate автоматично десеріалізує тіло JSON-запиту у Pydantic-модель та виконує валідацію типів. У разі невідповідності FastAPI автоматично повертає HTTP 422 з описом помилок валідації. Конструкція async with pool.acquire() as conn отримує з'єднання з пулу, що автоматично повертається після завершення блоку.
+Декоратор @router.post("") визначає HTTP-метод та шлях ендпоінту. Параметр dependencies=[Depends(require_admin)] забезпечує перевірку ролі адміністратора перед виконанням функції. Параметр body: BookCreate автоматично десеріалізує тіло JSON-запиту у Pydantic-модель та виконує валідацію типів. У разі невідповідності FastAPI автоматично повертає HTTP 422 з описом помилок валідації. Конструкція async with get_conn("admin") as conn отримує з'єднання з пулу та встановлює роль bookshop_admin на рівні СУБД, що забезпечує подвійний контроль доступу — як на рівні FastAPI (JWT), так і на рівні PostgreSQL (GRANT).
 
 Алгоритм операцій оновлення та видалення працює аналогічно. Для операції оновлення додатково реалізовано динамічне формування SQL-запиту на основі переданих полів (лістинг 8.4).
 
 ```python
 @router.put("/{book_id}", dependencies=[Depends(require_admin)])
 async def update_book(book_id: int, body: BookUpdate):
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with get_conn("admin") as conn:
         existing = await conn.fetchval(
             "SELECT 1 FROM books WHERE bookid = $1", book_id
         )
@@ -1063,7 +1080,19 @@ useEffect(() => {
 
 # 9 БЕЗПЕКА ІНФОРМАЦІЙНОЇ СИСТЕМИ
 
-Безпека інформаційної системи «Книгарня» реалізована на двох рівнях: на рівні серверного застосунку (FastAPI) та на рівні клієнтського застосунку (React). На відміну від підходу з використанням ролей бази даних PostgreSQL, у розробленій системі застосовано модель автентифікації на основі JWT-токенів (JSON Web Token) із перевіркою прав доступу на рівні API-ендпоінтів.
+Безпека інформаційної системи «Книгарня» реалізована на трьох рівнях: на рівні бази даних PostgreSQL (ролі та GRANT), на рівні серверного застосунку FastAPI (JWT-автентифікація) та на рівні клієнтського застосунку React (захист маршрутів). Такий багаторівневий підхід забезпечує надійний захист: навіть у разі обходу одного з рівнів, інші продовжують блокувати несанкціонований доступ.
+
+На рівні СУБД PostgreSQL створено три ролі — bookshop_admin, bookshop_user та bookshop_guest — кожна з яких має чітко визначений набір привілеїв, призначений за допомогою команд GRANT (див. Додаток C). При кожному зверненні до бази даних серверний застосунок виконує команду SET ROLE, перемикаючи сесію з'єднання на роль, що відповідає ролі автентифікованого користувача. Таким чином, PostgreSQL самостійно контролює дозволені операції та повертає помилку «permission denied» у разі спроби виконання несанкціонованої дії. Таблиця 9.1 містить перелік привілеїв кожної ролі.
+
+Таблиця 9.1 — Привілеї ролей бази даних
+
+| Роль | SELECT | INSERT | UPDATE | DELETE | Область дії |
+|---|---|---|---|---|---|
+| bookshop_admin | Усі таблиці | Усі таблиці | Усі таблиці | Усі таблиці | Повний доступ до всіх об'єктів БД |
+| bookshop_user | Каталог, замовлення, платежі | orders, orderdetails, payments | clients | — | Перегляд каталогу, створення замовлень |
+| bookshop_guest | books, authors, genres, publishers, languages, booklinks, branches, promotions | — | — | — | Тільки читання публічного каталогу |
+
+На рівні серверного застосунку додатково застосовано модель автентифікації на основі JWT-токенів (JSON Web Token) із перевіркою прав доступу на рівні API-ендпоінтів.
 
 В інформаційній системі реалізовано три рівні доступу:
 
@@ -1480,6 +1509,38 @@ CREATE INDEX idx_payments_clientid ON payments(clientid);
 ```
 
 Лістинг C.3 — Код створення індексів
+
+### Ролі та привілеї
+
+```sql
+-- Role: bookshop_admin — full access to all database objects
+CREATE ROLE bookshop_admin NOLOGIN;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO bookshop_admin;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO bookshop_admin;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO bookshop_admin;
+
+-- Role: bookshop_user — read catalog, create orders and payments, update own profile
+CREATE ROLE bookshop_user NOLOGIN;
+GRANT SELECT ON books, authors, genres, publishers, languages, booklinks,
+                branches, promotions, clients, orders, orderdetails, payments TO bookshop_user;
+GRANT SELECT ON booksfull, authorpopularity TO bookshop_user;
+GRANT INSERT ON orders, orderdetails, payments TO bookshop_user;
+GRANT UPDATE ON clients TO bookshop_user;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO bookshop_user;
+
+-- Role: bookshop_guest — read-only access to public catalog data
+CREATE ROLE bookshop_guest NOLOGIN;
+GRANT SELECT ON books, authors, genres, publishers, languages, booklinks,
+                branches, promotions TO bookshop_guest;
+GRANT SELECT ON booksfull TO bookshop_guest;
+
+-- Grant roles to the connecting user so SET ROLE works
+GRANT bookshop_admin TO postgres;
+GRANT bookshop_user TO postgres;
+GRANT bookshop_guest TO postgres;
+```
+
+Лістинг C.4 — Код створення ролей та призначення привілеїв
 
 # ДОДАТОК D
 
