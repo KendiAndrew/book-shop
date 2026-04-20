@@ -488,8 +488,12 @@ $$;
 -- 9. ROLES AND GRANTS (database-level access control)
 -- ============================================================
 
--- Drop existing roles if re-running the script
+-- Drop existing roles and app user if re-running the script
 DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'bookshop_app') THEN
+        REASSIGN OWNED BY bookshop_app TO postgres;
+        DROP OWNED BY bookshop_app;
+    END IF;
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'bookshop_admin') THEN
         REASSIGN OWNED BY bookshop_admin TO postgres;
         DROP OWNED BY bookshop_admin;
@@ -504,6 +508,7 @@ DO $$ BEGIN
     END IF;
 END $$;
 
+DROP ROLE IF EXISTS bookshop_app;
 DROP ROLE IF EXISTS bookshop_admin;
 DROP ROLE IF EXISTS bookshop_user;
 DROP ROLE IF EXISTS bookshop_guest;
@@ -529,7 +534,10 @@ GRANT SELECT ON books, authors, genres, publishers, languages, booklinks,
                 branches, promotions TO bookshop_guest;
 GRANT SELECT ON booksfull TO bookshop_guest;
 
--- Grant roles to the connecting user (postgres) so SET ROLE works
-GRANT bookshop_admin TO postgres;
-GRANT bookshop_user TO postgres;
-GRANT bookshop_guest TO postgres;
+-- Application user: connects to DB, has no direct table privileges,
+-- can only act through SET ROLE to one of the three roles above
+CREATE ROLE bookshop_app LOGIN PASSWORD 'bookshop_app_password';
+GRANT bookshop_admin TO bookshop_app;
+GRANT bookshop_user TO bookshop_app;
+GRANT bookshop_guest TO bookshop_app;
+GRANT CONNECT ON DATABASE book_shop TO bookshop_app;
