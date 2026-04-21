@@ -5,49 +5,61 @@ from contextlib import asynccontextmanager
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
     "port": int(os.getenv("DB_PORT", "5432")),
-    "user": os.getenv("DB_USER", "bookshop_app"),
-    "password": os.getenv("DB_PASSWORD", "bookshop_app_password"),
     "database": os.getenv("DB_NAME", "book_shop"),
 }
 
-ROLE_MAP = {
-    "admin": "bookshop_admin",
-    "user": "bookshop_user",
+ROLE_CREDENTIALS = {
+    "admin": {
+        "user": os.getenv("DB_ADMIN_USER", "bookshop_admin"),
+        "password": os.getenv("DB_ADMIN_PASSWORD", "admin123"),
+    },
+    "user": {
+        "user": os.getenv("DB_USER_USER", "bookshop_user"),
+        "password": os.getenv("DB_USER_PASSWORD", "user123"),
+    },
+    "guest": {
+        "user": os.getenv("DB_GUEST_USER", "bookshop_guest"),
+        "password": os.getenv("DB_GUEST_PASSWORD", "guest123"),
+    },
 }
-GUEST_ROLE = "bookshop_guest"
 
-pool: asyncpg.Pool | None = None
-
-
-async def get_pool() -> asyncpg.Pool:
-    global pool
-    if pool is None:
-        pool = await asyncpg.create_pool(**DB_CONFIG, min_size=2, max_size=10)
-    return pool
+pools: dict[str, asyncpg.Pool | None] = {
+    "admin": None,
+    "user": None,
+    "guest": None,
+}
 
 
-async def close_pool():
-    global pool
-    if pool:
-        await pool.close()
-        pool = None
+async def get_pool(role: str) -> asyncpg.Pool:
+    if role not in pools:
+        role = "guest"
+    if pools[role] is None:
+        creds = ROLE_CREDENTIALS[role]
+        pools[role] = await asyncpg.create_pool(
+            **DB_CONFIG,
+            user=creds["user"],
+            password=creds["password"],
+            min_size=2,
+            max_size=10,
+        )
+    return pools[role]
+
+
+async def close_pools():
+    for role in list(pools.keys()):
+        if pools[role]:
+            await pools[role].close()
+            pools[role] = None
 
 
 @asynccontextmanager
-async def get_conn(role: str | None = None):
-    """Acquire a DB connection with PostgreSQL role set via SET ROLE.
+async def get_conn(role: str = "guest"):
+    """Acquire a DB connection from the pool for the given app role.
 
-    role=None  -> no SET ROLE (used for auth endpoints)
-    role="admin"/"user" -> maps to bookshop_admin / bookshop_user
-    role=anything else  -> bookshop_guest
+    role="admin"  -> connects as bookshop_admin (full access)
+    role="user"   -> connects as bookshop_user  (limited access)
+    role="guest"  -> connects as bookshop_guest (read-only)
     """
-    p = await get_pool()
+    p = await get_pool(role)
     async with p.acquire() as conn:
-        if role is not None:
-            db_role = ROLE_MAP.get(role, GUEST_ROLE)
-            await conn.execute(f"SET ROLE {db_role}")
-        try:
-            yield conn
-        finally:
-            if role is not None:
-                await conn.execute("RESET ROLE")
+        yield conn

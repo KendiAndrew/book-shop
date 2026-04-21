@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
@@ -11,6 +12,7 @@ class OrderCreate(BaseModel):
     branchid: int
     items: list[dict]  # [{"bookid": 1, "quantity": 2}, ...]
     paymentmethod: str = "Карта"  # "Готівка" or "Карта"
+    cash_amount: Optional[float] = None
 
 
 class OrderItemCreate(BaseModel):
@@ -88,35 +90,21 @@ async def create_order(body: OrderCreate, user: dict = Depends(require_user)):
     if not client_id:
         raise HTTPException(status_code=400, detail="Користувач не прив'язаний до клієнта")
 
+    items_json = json.dumps(
+        [{"bookid": item["bookid"], "quantity": item["quantity"]} for item in body.items]
+    )
+
     async with get_conn(user["role"]) as conn:
-        async with conn.transaction():
-            order = await conn.fetchrow(
-                "INSERT INTO orders (clientid, orderdate, branchid) VALUES ($1, CURRENT_DATE, $2) RETURNING orderid",
-                client_id, body.branchid,
-            )
-
-            for item in body.items:
-                price = await conn.fetchval(
-                    "SELECT price FROM books WHERE bookid = $1", item["bookid"]
-                )
-                if price is None:
-                    raise HTTPException(status_code=400, detail=f"Книгу {item['bookid']} не знайдено")
-
-                await conn.execute(
-                    """INSERT INTO orderdetails (orderid, bookid, quantity, unitprice)
-                       VALUES ($1, $2, $3, $4)""",
-                    order["orderid"], item["bookid"], item["quantity"], price,
-                )
-
-            # Calculate total and create payment
-            total = await conn.fetchval(
-                "SELECT COALESCE(SUM(quantity * unitprice), 0) FROM orderdetails WHERE orderid = $1",
-                order["orderid"],
-            )
+        try:
             await conn.execute(
-                """INSERT INTO payments (clientid, amount, paymentdate, paymentmethod)
-                   VALUES ($1, $2, CURRENT_DATE, $3)""",
-                client_id, total, body.paymentmethod,
+                "CALL place_order($1, $2, $3::json, $4, $5)",
+                client_id,
+                body.branchid,
+                items_json,
+                body.paymentmethod,
+                body.cash_amount,
             )
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
-    return {"orderid": order["orderid"], "total": float(total), "message": "Замовлення створено"}
+    return {"message": "Замовлення створено"}

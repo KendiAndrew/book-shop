@@ -33,7 +33,7 @@
 5. Обрати технології та засоби реалізації інформаційної системи.
 6. З урахуванням вибраних засобів створити базу даних, а також клієнтський та серверний застосунки.
 7. Забезпечити цілісність і безпеку даних як на рівні бази даних (домени, обмеження, тригери), так і на рівні застосунку (валідація, транзакції).
-8. Забезпечити захист системи від несанкціонованого доступу і розмежування повноважень з боку різних груп користувачів за допомогою JWT-автентифікації та рольової моделі.
+8. Забезпечити захист системи від несанкціонованого доступу і розмежування повноважень з боку різних груп користувачів за допомогою ролей PostgreSQL з LOGIN та серверних сесій.
 9. Протестувати та налагодити роботу веб-застосунку.
 
 # 1 ПОСТАНОВКА ЗАДАЧІ
@@ -136,7 +136,11 @@
 
 # 2 ПРОЕКТУВАННЯ ІНФОРМАЦІЙНОЇ СИСТЕМИ
 
-При аналізі структури необхідного додатку обрано трирівневу архітектуру.
+В інформаційних системах, заснованих на застосуванні баз даних, логічно виділяються три основних шари: шар представлення (містить засоби взаємодії користувача з даними), шар бізнес-логіки (містить правила та залежності поведінки об'єктів предметної області) та шар даних (надає дані застосункам, що їх обробляють).
+
+Архітектура ІС визначає модель, структуру, виконувані функції і взаємозв'язок компонентів. Найбільш поширеною є архітектура клієнт-сервер, проте дворівнева реалізація (клієнт — СУБД) має суттєвий недолік: бізнес-логіка або перевантажує клієнтську частину, або виноситься безпосередньо до СУБД, що ускладнює супровід. При збільшенні кількості користувачів така архітектура погано масштабується, оскільки кожен клієнт утримує окреме з'єднання з базою даних.
+
+Для розроблюваної ІС обрано трирівневу архітектуру, яка усуває зазначені недоліки: сервер застосунку виступає посередником між клієнтом та СУБД, централізуючи бізнес-логіку, валідацію і контроль доступу. Така архітектура дозволяє незалежно масштабувати кожен шар, розробляти їх паралельно різними командами, а також чітко розмежовувати відповідальність компонентів. З огляду на три групи користувачів (гість, клієнт, адміністратор), 48 API-ендпоінтів та необхідність розмежування доступу на рівні СУБД, трирівнева архітектура є обґрунтованим вибором.
 
 Трирівнева архітектура — це архітектурна модель, що передбачає в її складі три взаємопов'язані компоненти: клієнт, що зазвичай виступає веб-браузером, сервер додатку та сервер баз даних (рис. 2.1).
 
@@ -223,7 +227,7 @@ ER-діаграма, отримана в результаті формаліза
 
 Рисунок 3.1 — ER-діаграма інформаційної системи «Книгарня»
 
-Промпт для генерації: Create an ER diagram (Entity-Relationship) for a bookshop database on a white background using Crow's Foot notation. 15 entities as rectangles with table names in bold headers and attribute lists inside. Tables and their key columns: 1) "genres" (PK: genreid, genrename), 2) "publishers" (PK: publisherid, publishername, country), 3) "authors" (PK: authorid, firstname, lastname, biography), 4) "suppliers" (PK: supplierid, firstname, lastname, email, phone), 5) "languages" (PK: languageid, languagename), 6) "branches" (PK: branchid, city, address, postcode, FK: managerid), 7) "employees" (PK: employeeid, firstname, lastname, position, email, hiredate, FK: branchid), 8) "clients" (PK: clientid, firstname, lastname, email, phone, FK: branchid), 9) "books" (PK: bookid, title, format, quantity, price, publicationyear, pagecount, created_at, FK: authorid, genreid, publisherid, supplierid, languageid), 10) "orders" (PK: orderid, orderdate, created_at, FK: clientid, branchid), 11) "orderdetails" (PK: orderdetailid, quantity, unitprice, FK: orderid, bookid), 12) "payments" (PK: paymentid, amount, paymentdate, paymentmethod, FK: clientid), 13) "promotions" (PK: promotionid, title, discount, startdate, enddate, FK: bookid, branchid), 14) "bookdeliveries" (PK: deliveryid, deliverydate, quantity, deliveryprice, FK: supplierid, bookid), 15) "booklinks" (PK: linkid, url, fileformat, FK: bookid), 16) "users" (PK: userid, username, password_hash, role, created_at, FK: employeeid, clientid). Relationships with Crow's Foot lines: authors 1──∞ books, genres 1──∞ books, publishers 1──∞ books, languages 1──∞ books, suppliers 1──∞ books (optional), suppliers 1──∞ bookdeliveries, books 1──∞ bookdeliveries, books 1──∞ orderdetails, books 1──∞ booklinks, books 1──∞ promotions, branches 1──∞ employees, branches 1──∞ clients, branches 1──∞ orders, branches 1──∞ promotions, clients 1──∞ orders, clients 1──∞ payments, orders 1──∞ orderdetails, employees 1──1 branches.managerid (optional), users 1──1 employees (optional UNIQUE), users 1──1 clients (optional UNIQUE). PK fields marked with key icon, FK fields with arrow icon. Colors: entity headers dark blue (#1E3A5F), attributes white background, lines gray (#6B7280). Clean layout, no overlapping lines. Size: 1200x900px.
+Промпт для генерації: Create an ER diagram (Entity-Relationship) for a bookshop database on a white background using Crow's Foot notation. 15 entities as rectangles with table names in bold headers and attribute lists inside. Tables and their key columns: 1) "genres" (PK: genreid, genrename), 2) "publishers" (PK: publisherid, publishername, country), 3) "authors" (PK: authorid, firstname, lastname, biography), 4) "suppliers" (PK: supplierid, firstname, lastname, email, phone), 5) "languages" (PK: languageid, languagename), 6) "branches" (PK: branchid, city, address, postcode, FK: managerid), 7) "employees" (PK: employeeid, firstname, lastname, position, email, hiredate, FK: branchid), 8) "clients" (PK: clientid, firstname, lastname, email, phone, FK: branchid), 9) "books" (PK: bookid, title, format, quantity, price, publicationyear, pagecount, created_at, FK: authorid, genreid, publisherid, supplierid, languageid), 10) "orders" (PK: orderid, orderdate, created_at, FK: clientid, branchid), 11) "orderdetails" (PK: orderdetailid, quantity, unitprice, FK: orderid, bookid), 12) "payments" (PK: paymentid, amount, paymentdate, paymentmethod, FK: clientid), 13) "promotions" (PK: promotionid, title, discount, startdate, enddate, FK: bookid, branchid), 14) "bookdeliveries" (PK: deliveryid, deliverydate, quantity, deliveryprice, FK: supplierid, bookid), 15) "booklinks" (PK: linkid, url, fileformat, FK: bookid), 16) "users" (PK: userid, username, role, created_at, FK: employeeid, clientid). Relationships with Crow's Foot lines: authors 1──∞ books, genres 1──∞ books, publishers 1──∞ books, languages 1──∞ books, suppliers 1──∞ books (optional), suppliers 1──∞ bookdeliveries, books 1──∞ bookdeliveries, books 1──∞ orderdetails, books 1──∞ booklinks, books 1──∞ promotions, branches 1──∞ employees, branches 1──∞ clients, branches 1──∞ orders, branches 1──∞ promotions, clients 1──∞ orders, clients 1──∞ payments, orders 1──∞ orderdetails, employees 1──1 branches.managerid (optional), users 1──1 employees (optional UNIQUE), users 1──1 clients (optional UNIQUE). PK fields marked with key icon, FK fields with arrow icon. Colors: entity headers dark blue (#1E3A5F), attributes white background, lines gray (#6B7280). Clean layout, no overlapping lines. Size: 1200x900px.
 
 # ДОДАТОК Б
 
@@ -391,7 +395,6 @@ ER-діаграма, отримана в результаті формаліза
 |---|---|---|
 | userid | ідентифікатор користувача | первинний ключ, GENERATED ALWAYS AS IDENTITY |
 | username | логін | NOT NULL, UNIQUE, VARCHAR(50) |
-| password_hash | хеш пароля (bcrypt) | NOT NULL, VARCHAR(255) |
 | role | роль у системі | NOT NULL, DEFAULT 'user', CHECK (role IN ('admin', 'user', 'guest')) |
 | employeeid | ідентифікатор працівника | UNIQUE, зовнішній ключ → employees(employeeid), ON DELETE SET NULL |
 | clientid | ідентифікатор клієнта | UNIQUE, зовнішній ключ → clients(clientid), ON DELETE SET NULL |
@@ -633,7 +636,7 @@ JOIN languages l ON b.languageid = l.languageid;
 Для вирішення задач інформаційної системи «Книгарня» необхідні різноманітні SQL-запити, представлення, збережені функції та тригери. Усі таблиці, що використовуються для виконання задач користувачів, подані у Додатку В. Матриця доступу ролей до ресурсів API, що визначає які операції доступні кожній групі користувачів, наведена у Додатку Ж.
 
 1) Для вирішення задач К1, А1, А5, А9, А13, А17, А20, А24, А26, А33 виконується запит типу INSERT INTO таблиця(список_стовпців) VALUES (список_значень) з підстановкою відповідних імен таблиць та списку стовпців:
-- для вирішення задачі К1 — ім'я таблиці clients, список стовпців — firstname, lastname, email, phone, branchid, а також ім'я таблиці users, список стовпців — username, password_hash, role, clientid;
+- для вирішення задачі К1 — ім'я таблиці clients, список стовпців — firstname, lastname, email, phone, branchid, а також ім'я таблиці users, список стовпців — username, role, clientid;
 - для задачі А1 — ім'я таблиці books, список стовпців — title, authorid, genreid, publisherid, format, quantity, price, supplierid, publicationyear, languageid, pagecount, cover_url;
 - для задачі А5 — ім'я таблиці authors, список стовпців — firstname, lastname, biography;
 - для задачі А9 — ім'я таблиці genres, стовпець — genrename;
@@ -740,47 +743,37 @@ LIMIT 20 OFFSET 0;
 
 Лістинг 7.5 — Запит вибірки книг каталогу з фільтрацією та пагінацією
 
-6) Для вирішення задачі К2 (авторизація) виконується запит вибірки облікового запису з подальшою перевіркою пароля на стороні сервера за допомогою бібліотеки bcrypt:
+6) Для вирішення задачі К2 (авторизація) виконується двоетапна процедура. Спочатку за іменем користувача визначається його роль у системі:
 
 ```sql
-SELECT u.userid, u.username, u.password_hash, u.role,
-       u.clientid, u.employeeid
-FROM users u
-WHERE u.username = $1;
+SELECT userid, username, role, clientid, employeeid
+FROM users
+WHERE username = $1;
 ```
 
-Лістинг 7.6 — Запит авторизації користувача
+Лістинг 7.6 — Запит визначення ролі користувача при авторизації
+
+Потім серверний застосунок намагається встановити реальне підключення до PostgreSQL від імені відповідної ролі (bookshop_admin або bookshop_user) з наданим паролем. PostgreSQL самостійно перевіряє пароль — у разі невірного пароля повертає помилку `invalid_password` і підключення відхиляється. Таким чином, перевірка облікових даних відбувається виключно на рівні СУБД.
 
 7) Для вирішення задачі К3 (перегляд профілю) виконується запит вибірки з таблиці clients із з'єднанням з таблицею branches за умовою збігу clientid поточного авторизованого користувача.
 
 8) Для вирішення задач К5, К6, К7 (додавання, зміна кількості та видалення товару в кошику) використовується клієнтський стан React-контексту CartContext, що зберігає дані кошика у пам'яті браузера без звернень до бази даних.
 
-9) Для вирішення задач К8 та К9 (оформлення замовлення з оплатою карткою або готівкою) виконується транзакція, що складається з кількох послідовних SQL-запитів. Аналогічна логіка реалізована у збереженій процедурі create_order (див. Додаток F):
+9) Для вирішення задач К8 та К9 (оформлення замовлення з оплатою карткою або готівкою) використовується збережена процедура place_order (див. Додаток Е). Виклик процедури здійснюється одним SQL-запитом:
 
 ```sql
--- Create order record
-INSERT INTO orders (clientid, orderdate, branchid)
-VALUES ($1, CURRENT_DATE, $2) RETURNING orderid;
-
--- Get book price
-SELECT price FROM books WHERE bookid = $1;
-
--- Add order detail (for each item)
-INSERT INTO orderdetails (orderid, bookid, quantity, unitprice)
-VALUES ($1, $2, $3, $4);
-
--- Calculate total
-SELECT COALESCE(SUM(quantity * unitprice), 0)
-FROM orderdetails WHERE orderid = $1;
-
--- Register payment
-INSERT INTO payments (clientid, amount, paymentdate, paymentmethod)
-VALUES ($1, $2, CURRENT_DATE, $3);
+CALL place_order(
+    p_clientid      := $1,   -- ідентифікатор клієнта
+    p_branchid      := $2,   -- ідентифікатор філії
+    p_items         := $3,   -- JSON-масив товарів: [{"bookid":1,"quantity":2},...]
+    p_paymentmethod := $4,   -- 'Карта' або 'Готівка'
+    p_cash_amount   := $5    -- сума готівки (лише для К9, інакше NULL)
+);
 ```
 
-Лістинг 7.7 — Послідовність запитів оформлення замовлення з оплатою
+Лістинг 7.7 — Виклик збереженої процедури оформлення замовлення
 
-При додаванні деталі замовлення автоматично спрацьовує тригер trg_order_decrease_stock (див. Додаток E), що зменшує кількість книги на складі, а також тригер trg_check_stock (див. Додаток E), що блокує продаж фізичної книги при недостатній кількості.
+Процедура place_order виконується як єдина атомарна транзакція: створює запис у таблиці orders, для кожного товару виконує INSERT в orderdetails (при цьому автоматично спрацьовує тригер trg_check_stock, що блокує продаж фізичної книги при недостатній кількості, та тригер trg_order_decrease_stock, що зменшує залишок на складі), перевіряє достатність суми готівки для задачі К9, після чого реєструє платіж у таблиці payments.
 
 10) Для вирішення задач К10 та А30 (перегляд замовлень клієнтом та адміністратором) виконується запит із з'єднанням таблиць orders, clients, branches та orderdetails з групуванням для обчислення загальної суми кожного замовлення:
 
@@ -1080,11 +1073,13 @@ useEffect(() => {
 
 # 9 БЕЗПЕКА ІНФОРМАЦІЙНОЇ СИСТЕМИ
 
-Безпека інформаційної системи «Книгарня» реалізована на трьох рівнях: на рівні бази даних PostgreSQL (ролі та GRANT), на рівні серверного застосунку FastAPI (JWT-автентифікація) та на рівні клієнтського застосунку React (захист маршрутів). Такий багаторівневий підхід забезпечує надійний захист: навіть у разі обходу одного з рівнів, інші продовжують блокувати несанкціонований доступ.
+Безпека інформаційної системи «Книгарня» реалізована на двох рівнях: на рівні бази даних PostgreSQL (ролі з LOGIN, GRANT-привілеї, перевірка пароля ядром СУБД) та на рівні серверного застосунку FastAPI (сесійна автентифікація, захист маршрутів). Ключовою особливістю є те, що автентифікація та авторизація здійснюються безпосередньо PostgreSQL, а не прикладним застосунком.
 
-На рівні СУБД PostgreSQL реалізовано модель розмежування доступу з чітким розподілом між прикладним користувачем та ролями привілеїв (див. Додаток В). Створено три ролі без права входу (NOLOGIN): bookshop_admin, bookshop_user та bookshop_guest. Ці ролі визначають набори дозволених операцій, але не можуть самостійно підключатись до бази даних. Роль bookshop_admin отримує повний доступ (ALL PRIVILEGES) до всіх таблиць, послідовностей та функцій бази даних. Роль bookshop_user має право читання (SELECT) каталогу, замовлень та платежів, право створення (INSERT) нових записів у таблицях orders, orderdetails та payments, а також право оновлення (UPDATE) власного профілю у таблиці clients. Роль bookshop_guest має виключно право читання (SELECT) публічних таблиць каталогу та представлення booksfull, без можливості будь-якої модифікації даних.
+На рівні СУБД PostgreSQL створено три ролі з правом входу (LOGIN): bookshop_admin, bookshop_user та bookshop_guest (див. Додаток В). Кожна роль має власний пароль, що зберігається у системному каталозі PostgreSQL (pg_authid), і чітко визначений набір привілеїв, призначений командами GRANT. Роль bookshop_admin отримує повний доступ (ALL PRIVILEGES) до всіх таблиць, послідовностей та функцій бази даних. Роль bookshop_user має право читання (SELECT) каталогу та замовлень, право створення (INSERT) записів у таблицях orders, orderdetails та payments, право оновлення (UPDATE) власного профілю у таблиці clients, а також право виконання збереженої процедури place_order. Роль bookshop_guest має виключно право читання (SELECT) публічних таблиць каталогу та представлення booksfull — без можливості будь-якої модифікації даних. Таким чином, PostgreSQL самостійно контролює дозволені операції та повертає помилку «permission denied» у разі спроби виконання несанкціонованої дії.
 
-Окремо створено прикладного користувача bookshop_app з правом LOGIN та CONNECT до бази даних. Цей користувач не має жодних прямих привілеїв на таблиці — він лише є власником трьох ролей вище через GRANT. Серверний застосунок підключається до бази даних виключно від імені bookshop_app. При кожному зверненні до бази даних виконується команда SET ROLE, що перемикає сесію з'єднання на роль, яка відповідає ролі автентифікованого користувача (bookshop_admin, bookshop_user або bookshop_guest). Після виконання запиту команда RESET ROLE повертає з'єднання назад до стану bookshop_app, що не має прямого доступу до таблиць. Таким чином, PostgreSQL самостійно контролює дозволені операції та повертає помилку «permission denied» у разі спроби виконання несанкціонованої дії.
+Серверний застосунок підтримує три окремих пули з'єднань — по одному для кожної ролі. Пул для bookshop_admin підключається із кредентіалами адміністратора, пул для bookshop_user — із кредентіалами клієнта, пул для bookshop_guest — із кредентіалами гостя. При кожному зверненні до бази даних застосунок отримує з'єднання з відповідного пулу, що вже підключений від імені потрібної ролі — команда SET ROLE не потрібна.
+
+При авторизації (задача К2) серверний застосунок отримує від користувача логін та пароль. За логіном у таблиці users визначається роль користувача (admin, user або guest). Потім застосунок намагається встановити тестове підключення до PostgreSQL від імені відповідної PostgreSQL-ролі (bookshop_admin або bookshop_user) з наданим паролем. Якщо пароль невірний, PostgreSQL відхиляє підключення з помилкою invalid_password — перевірка облікових даних відбувається виключно в ядрі СУБД, без жодного зберігання паролів у таблицях. У разі успіху на сервері створюється сесійний токен (безпечний випадковий рядок), що зберігається у пам'яті серверного застосунку та надсилається клієнту. Таблиця users містить лише поля username та role — паролі в ній не зберігаються.
 
 В інформаційній системі реалізовано три рівні доступу:
 
@@ -1094,13 +1089,9 @@ useEffect(() => {
 
 Ознайомитись з повною матрицею доступу ролей до ресурсів API можна у Додатку Ж.
 
-При реєстрації нового облікового запису (задача К1) пароль не зберігається у відкритому вигляді. Замість цього використовується алгоритм bcrypt — адаптивна хеш-функція, що генерує унікальну «сіль» (salt) для кожного пароля та виконує багаторазове хешування, що значно ускладнює підбір паролю методом перебору. Для роботи з bcrypt використано бібліотеку passlib, що надає єдиний інтерфейс CryptContext для хешування та верифікації паролів (лістинг И.1). При авторизації (задача К2) введений пароль хешується та порівнюється зі збереженим хешем за допомогою функції verify_password.
+На стороні серверного застосунку реалізовано систему залежностей FastAPI (Depends) для перевірки автентифікації та авторизації (лістинг И.4): функція get_current_user витягує сесійний токен із заголовка Authorization Bearer та повертає збережений у пам'яті серверу об'єкт користувача, або None для гостей; функція require_user вимагає наявність активної сесії, повертаючи HTTP 401 у разі відсутності; функція require_admin додатково перевіряє роль «admin», повертаючи HTTP 403 у разі невідповідності.
 
-Після успішної перевірки пароля сервер формує JWT-токен — закодований рядок, що містить інформацію про користувача та термін дії (лістинг И.2). Токен підписується алгоритмом HMAC SHA-256 (HS256) із використанням секретного ключа, відомого лише серверу. Термін дії токена становить 24 години, після чого необхідна повторна авторизація. Payload JWT-токена містить наступні поля: sub (ідентифікатор користувача), username (логін), role (роль — «admin» або «user»), clientid (ідентифікатор клієнта), employeeid (ідентифікатор працівника) та exp (час закінчення дії токена). Отриманий токен зберігається на стороні клієнта у localStorage браузера та автоматично додається до кожного HTTP-запиту у заголовку Authorization у форматі Bearer (лістинг И.3).
-
-На стороні серверного застосунку реалізовано систему залежностей FastAPI (Depends) для перевірки автентифікації та авторизації (лістинг И.4): функція get_current_user витягує та декодує JWT-токен із заголовка Authorization, повертаючи None для гостей; функція require_user вимагає наявність дійсного токена, повертаючи HTTP 401 у разі відсутності; функція require_admin додатково перевіряє роль «admin», повертаючи HTTP 403 у разі невідповідності. Ці залежності підключаються до маршрутів через параметр dependencies=[Depends(require_admin)].
-
-На стороні клієнтського застосунку реалізовано два компоненти-обгортки для захисту маршрутів React Router (лістинг И.5): RequireAuth перевіряє стан авторизації та перенаправляє неавторизованих користувачів на сторінку входу, а RequireAdmin додатково перевіряє роль «admin». Глобальний стан автентифікації управляється контекстом AuthProvider (лістинг И.6), що забезпечує декодування JWT-токена на стороні клієнта, збереження токена у localStorage для підтримки сесії між перезавантаженнями сторінки, автоматичне очищення недійсного токена та функції login, register та logout для управління сесією.
+На стороні клієнтського застосунку реалізовано два компоненти-обгортки для захисту маршрутів React Router (лістинг И.5): RequireAuth перевіряє стан авторизації та перенаправляє неавторизованих користувачів на сторінку входу, а RequireAdmin додатково перевіряє роль «admin». Глобальний стан автентифікації управляється контекстом AuthProvider (лістинг И.6): при вході сервер повертає об'єкт користувача разом із сесійним токеном, який зберігається у localStorage браузера та автоматично додається до кожного HTTP-запиту у заголовку Authorization.
 
 Тексти коду модулів автентифікації та авторизації наведено у Додатку И.
 
@@ -1254,7 +1245,7 @@ useEffect(() => {
 
 Тригери та тригерні функції забезпечують цілісність бази даних: автоматичний контроль залишків товару при оформленні замовлення, блокування продажу фізичних книг за відсутності достатньої кількості на складі з пропозицією електронної версії, а також автоматичне оновлення кількості при реєстрації постачань. Валідація вхідних даних на стороні сервера реалізована за допомогою Pydantic-моделей, а на рівні бази даних — за допомогою доменів та обмежень CHECK.
 
-Завдяки JWT-автентифікації та рольовому розмежуванню повноважень серед різних груп користувачів забезпечено захист від несанкціонованого доступу до системи. Система протестована та перевірена за допомогою 62 автоматизованих API-тестів, що охоплюють усі ендпоінти.
+Завдяки автентифікації через ролі PostgreSQL та рольовому розмежуванню повноважень серед різних груп користувачів забезпечено захист від несанкціонованого доступу до системи. Система протестована та перевірена за допомогою 62 автоматизованих API-тестів, що охоплюють усі ендпоінти.
 
 Створювана система надає можливості:
 
@@ -1465,11 +1456,10 @@ CREATE TABLE booklinks (
                    CONSTRAINT booklinks_fileformat_check CHECK (fileformat IN ('PDF', 'EPUB', 'MOBI', 'FB2'))
 );
 
--- Users (authentication and authorization)
+-- Users (role mapping and identity; passwords are managed by PostgreSQL roles)
 CREATE TABLE users (
     userid        INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     username      VARCHAR(50) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
     role          VARCHAR(15) NOT NULL DEFAULT 'user'
                       CONSTRAINT users_role_check CHECK (role IN ('admin', 'user', 'guest')),
     employeeid    INTEGER UNIQUE REFERENCES employees(employeeid) ON DELETE SET NULL,
@@ -1505,34 +1495,28 @@ CREATE INDEX idx_payments_clientid ON payments(clientid);
 ### Ролі та привілеї
 
 ```sql
--- Role: bookshop_admin — full access to all database objects
-CREATE ROLE bookshop_admin NOLOGIN;
+-- Role: bookshop_admin — full access, direct login for administrators
+CREATE ROLE bookshop_admin LOGIN PASSWORD 'admin123';
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO bookshop_admin;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO bookshop_admin;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO bookshop_admin;
 
 -- Role: bookshop_user — read catalog, create orders and payments, update own profile
-CREATE ROLE bookshop_user NOLOGIN;
+CREATE ROLE bookshop_user LOGIN PASSWORD 'user123';
 GRANT SELECT ON books, authors, genres, publishers, languages, booklinks,
                 branches, promotions, clients, orders, orderdetails, payments TO bookshop_user;
 GRANT SELECT ON booksfull, authorpopularity TO bookshop_user;
 GRANT INSERT ON orders, orderdetails, payments TO bookshop_user;
 GRANT UPDATE ON clients TO bookshop_user;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO bookshop_user;
+GRANT EXECUTE ON PROCEDURE place_order(INTEGER, INTEGER, JSON, VARCHAR, NUMERIC)
+    TO bookshop_user;
 
 -- Role: bookshop_guest — read-only access to public catalog data
-CREATE ROLE bookshop_guest NOLOGIN;
+CREATE ROLE bookshop_guest LOGIN PASSWORD 'guest123';
 GRANT SELECT ON books, authors, genres, publishers, languages, booklinks,
                 branches, promotions TO bookshop_guest;
 GRANT SELECT ON booksfull TO bookshop_guest;
-
--- Application user: connects to DB, has no direct table privileges,
--- can only act through SET ROLE to one of the three roles above
-CREATE ROLE bookshop_app LOGIN PASSWORD 'bookshop_app_password';
-GRANT bookshop_admin TO bookshop_app;
-GRANT bookshop_user TO bookshop_app;
-GRANT bookshop_guest TO bookshop_app;
-GRANT CONNECT ON DATABASE book_shop TO bookshop_app;
 ```
 
 Лістинг В.4 — Код створення ролей та призначення привілеїв
@@ -1843,50 +1827,71 @@ CREATE TRIGGER trg_order_decrease_stock
 
 ## Запити на створення збережених процедур для вирішення задач ІС
 
-Процедура для оформлення замовлення клієнтом (лістинг Е.1). Процедура приймає ідентифікатор клієнта, філії, книги та кількість примірників, створює запис замовлення та додає деталі замовлення в межах однієї транзакції.
+Процедура для оформлення замовлення клієнтом (лістинг Е.1). Процедура вирішує задачі К8 (оплата карткою) та К9 (оплата готівкою). Приймає ідентифікатор клієнта, філії, JSON-масив товарів, спосіб оплати та суму готівки. Виконується як єдина атомарна транзакція: створює замовлення, додає всі товарні позиції (тригери автоматично перевіряють залишок та зменшують кількість), перевіряє достатність готівки та реєструє платіж.
 
 ```sql
--- [PROCEDURE] Create a new order for a client.
--- Fetches book price, creates order record, adds order details.
--- Triggers will validate stock and auto-decrement quantity.
-CREATE OR REPLACE PROCEDURE create_order(
-    p_clientid  INTEGER,
-    p_branchid  INTEGER,
-    p_bookid    INTEGER,
-    p_quantity  INTEGER
+-- [PROCEDURE] Place a complete order with payment (tasks K8, K9).
+-- Creates order, inserts all order details via loop (triggers fire on each INSERT),
+-- validates cash amount, and registers payment — all in one atomic transaction.
+CREATE OR REPLACE PROCEDURE place_order(
+    p_clientid      INTEGER,
+    p_branchid      INTEGER,
+    p_items         JSON,
+    p_paymentmethod VARCHAR(10),
+    p_cash_amount   NUMERIC(10,2) DEFAULT NULL
 )
 LANGUAGE plpgsql AS $$
 DECLARE
     v_orderid   INTEGER;
-    v_unitprice NUMERIC(10,2);
+    v_total     NUMERIC(10,2) := 0;
+    v_item      JSON;
+    v_price     NUMERIC(10,2);
 BEGIN
-    -- Get book price
-    SELECT price INTO v_unitprice
-    FROM books WHERE bookid = p_bookid;
-
-    IF v_unitprice IS NULL THEN
-        RAISE EXCEPTION 'Book with ID % not found', p_bookid;
-    END IF;
-
-    -- Create order
+    -- Create order record
     INSERT INTO orders (clientid, orderdate, branchid)
     VALUES (p_clientid, CURRENT_DATE, p_branchid)
     RETURNING orderid INTO v_orderid;
 
-    -- Add order details (triggers will check stock and decrement quantity)
-    INSERT INTO orderdetails (orderid, bookid, quantity, unitprice)
-    VALUES (v_orderid, p_bookid, p_quantity, v_unitprice);
+    -- Insert each order item (triggers validate stock and decrement quantity)
+    FOR v_item IN SELECT * FROM json_array_elements(p_items) LOOP
+        SELECT price INTO v_price
+        FROM books WHERE bookid = (v_item->>'bookid')::INTEGER;
+
+        IF v_price IS NULL THEN
+            RAISE EXCEPTION 'Book with ID % not found', (v_item->>'bookid')::INTEGER;
+        END IF;
+
+        INSERT INTO orderdetails (orderid, bookid, quantity, unitprice)
+        VALUES (v_orderid,
+                (v_item->>'bookid')::INTEGER,
+                (v_item->>'quantity')::INTEGER,
+                v_price);
+
+        v_total := v_total + v_price * (v_item->>'quantity')::INTEGER;
+    END LOOP;
+
+    -- Validate cash amount if payment method is cash (task K9)
+    IF p_paymentmethod = 'Готівка' AND p_cash_amount IS NOT NULL THEN
+        IF p_cash_amount < v_total THEN
+            RAISE EXCEPTION 'Insufficient cash: % provided, % required',
+                p_cash_amount, v_total;
+        END IF;
+    END IF;
+
+    -- Register payment
+    INSERT INTO payments (clientid, amount, paymentdate, paymentmethod)
+    VALUES (p_clientid, v_total, CURRENT_DATE, p_paymentmethod);
 END;
 $$;
 ```
 
-Лістинг Е.1 — Код збереженої процедури create_order
+Лістинг Е.1 — Код збереженої процедури place_order
 
 # ДОДАТОК Ж
 
 ## Матриця доступу ролей до ресурсів API
 
-У інформаційній системі «Книгарня» розмежування доступу реалізовано на рівні застосунку за допомогою JWT-автентифікації та перевірки ролі користувача. Виділено три рівні доступу: гість (неавторизований користувач), клієнт (авторизований з роллю «user») та адміністратор (авторизований з роллю «admin»).
+У інформаційній системі «Книгарня» розмежування доступу реалізовано на двох рівнях: на рівні бази даних (ролі PostgreSQL з LOGIN, окремі пули з'єднань, GRANT) та на рівні застосунку (серверні сесії, перевірка ролі з сесії). Виділено три рівні доступу: гість (неавторизований користувач), клієнт (авторизований з роллю «user») та адміністратор (авторизований з роллю «admin»).
 
 Таблиця G.1 — Матриця доступу ролей до API-ендпоінтів ІС «Книгарня»
 

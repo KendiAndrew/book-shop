@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, ReactNode } from "react";
 import { post } from "../api/client";
 
 interface User {
@@ -15,7 +15,6 @@ interface AuthContextType {
   login: (username: string, password: string) => Promise<void>;
   register: (data: {
     username: string;
-    password: string;
     firstname: string;
     lastname: string;
     email: string;
@@ -29,36 +28,14 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>(null!);
 
-function decodeToken(t: string | null): User | null {
-  if (!t) return null;
-  try {
-    const payload = JSON.parse(atob(t.split(".")[1]));
-    return {
-      userid: parseInt(payload.sub),
-      username: payload.username,
-      role: payload.role,
-      clientid: payload.clientid,
-      employeeid: payload.employeeid,
-    };
-  } catch {
-    return null;
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(
-    localStorage.getItem("token")
+    () => localStorage.getItem("token")
   );
-  const [user, setUser] = useState<User | null>(() => decodeToken(localStorage.getItem("token")));
-
-  useEffect(() => {
-    const decoded = decodeToken(token);
-    if (token && !decoded) {
-      setToken(null);
-      localStorage.removeItem("token");
-    }
-    setUser(decoded);
-  }, [token]);
+  const [user, setUser] = useState<User | null>(() => {
+    const stored = localStorage.getItem("user");
+    return stored ? JSON.parse(stored) : null;
+  });
 
   const login = async (username: string, password: string) => {
     const res = await post<{ token: string; user: User }>(
@@ -66,12 +43,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       { username, password }
     );
     localStorage.setItem("token", res.token);
+    localStorage.setItem("user", JSON.stringify(res.user));
     setToken(res.token);
+    setUser(res.user);
   };
 
   const register = async (data: {
     username: string;
-    password: string;
     firstname: string;
     lastname: string;
     email: string;
@@ -83,11 +61,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data
     );
     localStorage.setItem("token", res.token);
+    localStorage.setItem("user", JSON.stringify(res.user));
     setToken(res.token);
+    setUser(res.user);
   };
 
   const logout = () => {
     localStorage.removeItem("token");
+    localStorage.removeItem("user");
     setToken(null);
     setUser(null);
   };

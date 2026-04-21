@@ -194,7 +194,6 @@ CREATE TABLE booklinks (
 CREATE TABLE users (
     userid        INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     username      VARCHAR(50) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
     role          VARCHAR(15) NOT NULL DEFAULT 'user'
                       CONSTRAINT users_role_check CHECK (role IN ('admin', 'user', 'guest')),
     employeeid    INTEGER UNIQUE REFERENCES employees(employeeid) ON DELETE SET NULL,
@@ -454,33 +453,54 @@ CREATE TRIGGER trg_order_decrease_stock
 -- 8. ПРОЦЕДУРА: Оформлення замовлення
 -- ============================================================
 
-CREATE OR REPLACE PROCEDURE create_order(
-    p_clientid  INTEGER,
-    p_branchid  INTEGER,
-    p_bookid    INTEGER,
-    p_quantity  INTEGER
+CREATE OR REPLACE PROCEDURE place_order(
+    p_clientid      INTEGER,
+    p_branchid      INTEGER,
+    p_items         JSON,
+    p_paymentmethod VARCHAR(10),
+    p_cash_amount   NUMERIC(10,2) DEFAULT NULL
 )
 LANGUAGE plpgsql AS $$
 DECLARE
     v_orderid   INTEGER;
-    v_unitprice NUMERIC(10,2);
+    v_total     NUMERIC(10,2) := 0;
+    v_item      JSON;
+    v_price     NUMERIC(10,2);
 BEGIN
-    -- Отримуємо ціну книги
-    SELECT price INTO v_unitprice
-    FROM books WHERE bookid = p_bookid;
-
-    IF v_unitprice IS NULL THEN
-        RAISE EXCEPTION 'Книгу з ID % не знайдено', p_bookid;
-    END IF;
-
-    -- Створюємо замовлення
+    -- Create order record
     INSERT INTO orders (clientid, orderdate, branchid)
     VALUES (p_clientid, CURRENT_DATE, p_branchid)
     RETURNING orderid INTO v_orderid;
 
-    -- Додаємо деталі замовлення (тригери перевірять наявність та зменшать кількість)
-    INSERT INTO orderdetails (orderid, bookid, quantity, unitprice)
-    VALUES (v_orderid, p_bookid, p_quantity, v_unitprice);
+    -- Insert each order item (triggers validate stock and decrement quantity)
+    FOR v_item IN SELECT * FROM json_array_elements(p_items) LOOP
+        SELECT price INTO v_price
+        FROM books WHERE bookid = (v_item->>'bookid')::INTEGER;
+
+        IF v_price IS NULL THEN
+            RAISE EXCEPTION 'Book with ID % not found', (v_item->>'bookid')::INTEGER;
+        END IF;
+
+        INSERT INTO orderdetails (orderid, bookid, quantity, unitprice)
+        VALUES (v_orderid,
+                (v_item->>'bookid')::INTEGER,
+                (v_item->>'quantity')::INTEGER,
+                v_price);
+
+        v_total := v_total + v_price * (v_item->>'quantity')::INTEGER;
+    END LOOP;
+
+    -- Validate cash amount if payment method is cash
+    IF p_paymentmethod = 'Готівка' AND p_cash_amount IS NOT NULL THEN
+        IF p_cash_amount < v_total THEN
+            RAISE EXCEPTION 'Insufficient cash: % provided, % required',
+                p_cash_amount, v_total;
+        END IF;
+    END IF;
+
+    -- Register payment
+    INSERT INTO payments (clientid, amount, paymentdate, paymentmethod)
+    VALUES (p_clientid, v_total, CURRENT_DATE, p_paymentmethod);
 END;
 $$;
 
@@ -488,7 +508,7 @@ $$;
 -- 9. ROLES AND GRANTS (database-level access control)
 -- ============================================================
 
--- Drop existing roles and app user if re-running the script
+-- Drop existing roles if re-running the script
 DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'bookshop_app') THEN
         REASSIGN OWNED BY bookshop_app TO postgres;
@@ -513,31 +533,24 @@ DROP ROLE IF EXISTS bookshop_admin;
 DROP ROLE IF EXISTS bookshop_user;
 DROP ROLE IF EXISTS bookshop_guest;
 
--- Role: bookshop_admin — full access to all database objects
-CREATE ROLE bookshop_admin NOLOGIN;
+-- Role: bookshop_admin — full access, direct login for administrators
+CREATE ROLE bookshop_admin LOGIN PASSWORD 'admin123';
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO bookshop_admin;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO bookshop_admin;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO bookshop_admin;
 
 -- Role: bookshop_user — read catalog, create orders and payments, update own profile
-CREATE ROLE bookshop_user NOLOGIN;
+CREATE ROLE bookshop_user LOGIN PASSWORD 'user123';
 GRANT SELECT ON books, authors, genres, publishers, languages, booklinks,
                 branches, promotions, clients, orders, orderdetails, payments TO bookshop_user;
 GRANT SELECT ON booksfull, authorpopularity TO bookshop_user;
 GRANT INSERT ON orders, orderdetails, payments TO bookshop_user;
 GRANT UPDATE ON clients TO bookshop_user;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO bookshop_user;
+GRANT EXECUTE ON PROCEDURE place_order(INTEGER, INTEGER, JSON, VARCHAR, NUMERIC) TO bookshop_user;
 
 -- Role: bookshop_guest — read-only access to public catalog data
-CREATE ROLE bookshop_guest NOLOGIN;
+CREATE ROLE bookshop_guest LOGIN PASSWORD 'guest123';
 GRANT SELECT ON books, authors, genres, publishers, languages, booklinks,
                 branches, promotions TO bookshop_guest;
 GRANT SELECT ON booksfull TO bookshop_guest;
-
--- Application user: connects to DB, has no direct table privileges,
--- can only act through SET ROLE to one of the three roles above
-CREATE ROLE bookshop_app LOGIN PASSWORD 'bookshop_app_password';
-GRANT bookshop_admin TO bookshop_app;
-GRANT bookshop_user TO bookshop_app;
-GRANT bookshop_guest TO bookshop_app;
-GRANT CONNECT ON DATABASE book_shop TO bookshop_app;
