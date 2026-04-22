@@ -299,7 +299,9 @@ GROUP BY br.branchid, br.city, br.address;
 
 -- Функція-тригер: блокує продаж твердої копії, якщо недостатньо на складі
 CREATE OR REPLACE FUNCTION block_hardcover_sales()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+SECURITY DEFINER
+AS $$
 DECLARE
     book_format VARCHAR(12);
     book_stock  INTEGER;
@@ -376,7 +378,9 @@ $$ LANGUAGE plpgsql;
 
 -- Функція-тригер: автоматичне оновлення кількості книг при поставці
 CREATE OR REPLACE FUNCTION update_book_quantity_on_delivery()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+SECURITY DEFINER
+AS $$
 BEGIN
     UPDATE books
     SET quantity = quantity + NEW.quantity
@@ -387,7 +391,9 @@ $$ LANGUAGE plpgsql;
 
 -- Функція-тригер: зменшення кількості книг при створенні деталі замовлення
 CREATE OR REPLACE FUNCTION decrease_book_quantity_on_order()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+SECURITY DEFINER
+AS $$
 BEGIN
     UPDATE books
     SET quantity = quantity - NEW.quantity
