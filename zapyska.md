@@ -773,7 +773,16 @@ CALL place_order(
 
 Лістинг 7.7 — Виклик збереженої процедури оформлення замовлення
 
-Процедура place_order виконується як єдина атомарна транзакція: створює запис у таблиці orders, для кожного товару виконує INSERT в orderdetails (при цьому автоматично спрацьовує тригер trg_check_stock, що блокує продаж фізичної книги при недостатній кількості, та тригер trg_order_decrease_stock, що зменшує залишок на складі), перевіряє достатність суми готівки для задачі К9, після чого реєструє платіж у таблиці payments.
+Процедура place_order виконується як єдина атомарна транзакція: якщо будь-який крок (вставка замовлення, вставка деталей, перевірка готівки, реєстрація платежу) завершується помилкою — PostgreSQL автоматично відкочує усі зміни. Ключовий елемент процедури — вставка рядків у таблицю orderdetails, що автоматично запускає два тригери:
+
+```sql
+INSERT INTO orderdetails (orderid, bookid, quantity, unitprice)
+VALUES ($1, $2, $3, $4);
+```
+
+Лістинг 7.8 — Запит вставки позиції замовлення, що запускає тригери trg_check_stock та trg_order_decrease_stock
+
+Тригер trg_check_stock (BEFORE INSERT) перевіряє, що кількість замовленого товару не перевищує залишок на складі — якщо перевищує, генерує виняток і транзакція відкочується. Тригер trg_order_decrease_stock (AFTER INSERT) зменшує значення поля quantity у таблиці books на замовлену кількість, забезпечуючи актуальність залишків.
 
 10) Для вирішення задач К10 та А30 (перегляд замовлень клієнтом та адміністратором) виконується запит із з'єднанням таблиць orders, clients, branches та orderdetails з групуванням для обчислення загальної суми кожного замовлення:
 
@@ -791,7 +800,7 @@ GROUP BY o.orderid, o.orderdate, o.branchid,
 ORDER BY o.orderdate DESC;
 ```
 
-Лістинг 7.8 — Запит вибірки замовлень з інформацією про клієнта та філію
+Лістинг 7.9 — Запит вибірки замовлень з інформацією про клієнта та філію
 
 Для задачі К10 додатково застосовується фільтр WHERE o.clientid = $1 для обмеження вибірки замовленнями поточного клієнта.
 
@@ -804,7 +813,7 @@ JOIN books b ON od.bookid = b.bookid
 WHERE od.orderid = $1;
 ```
 
-Лістинг 7.9 — Запит вибірки деталей замовлення
+Лістинг 7.10 — Запит вибірки деталей замовлення
 
 12) Для вирішення задачі А35 (аналітична панель) виконуються чотири окремі агрегатні запити для отримання загальної кількості книг, клієнтів, замовлень та сумарного доходу:
 
@@ -816,7 +825,7 @@ SELECT COALESCE(SUM(od.quantity * od.unitprice), 0)
 FROM orderdetails od;
 ```
 
-Лістинг 7.10 — Агрегатні запити аналітичної панелі
+Лістинг 7.11 — Агрегатні запити аналітичної панелі
 
 13) Для вирішення задачі А36 (звіт популярності авторів) використано представлення authorpopularity (див. Додаток D). Для отримання результату виконується запит:
 
@@ -824,7 +833,7 @@ FROM orderdetails od;
 SELECT * FROM authorpopularity ORDER BY totalsales DESC;
 ```
 
-Лістинг 7.11 — Запит до представлення authorpopularity
+Лістинг 7.12 — Запит до представлення authorpopularity
 
 14) Для вирішення задачі А37 (тренд продажів) використано представлення booksalestrend (див. Додаток D), що застосовує віконні функції AVG та LAG для обчислення середнього значення та відхилення від попереднього місяця:
 
@@ -832,7 +841,7 @@ SELECT * FROM authorpopularity ORDER BY totalsales DESC;
 SELECT * FROM booksalestrend ORDER BY salemonth DESC LIMIT 50;
 ```
 
-Лістинг 7.12 — Запит до представлення booksalestrend
+Лістинг 7.13 — Запит до представлення booksalestrend
 
 15) Для вирішення задачі А38 (звіт продажів за філіями) використано представлення branchsalesreport (див. Додаток D):
 
@@ -840,7 +849,7 @@ SELECT * FROM booksalestrend ORDER BY salemonth DESC LIMIT 50;
 SELECT * FROM branchsalesreport ORDER BY totalrevenue DESC;
 ```
 
-Лістинг 7.13 — Запит до представлення branchsalesreport
+Лістинг 7.14 — Запит до представлення branchsalesreport
 
 16) Для вирішення задачі А39 (динаміка продажів конкретної книги) використано збережену функцію calculate_sales_dynamics (див. Додаток E), що приймає ідентифікатор книги та повертає продажі за поточний та попередній місяці, коефіцієнт динаміки та загальні продажі. Функція викликається запитом:
 
@@ -848,7 +857,7 @@ SELECT * FROM branchsalesreport ORDER BY totalrevenue DESC;
 SELECT * FROM calculate_sales_dynamics($1);
 ```
 
-Лістинг 7.14 — Виклик функції calculate_sales_dynamics
+Лістинг 7.15 — Виклик функції calculate_sales_dynamics
 
 # 8 ПРОГРАМНА РЕАЛІЗАЦІЯ ІНТЕРФЕЙСУ
 
@@ -1833,6 +1842,7 @@ CREATE TRIGGER trg_order_decrease_stock
 -- [PROCEDURE] Place a complete order with payment (tasks K8, K9).
 -- Creates order, inserts all order details via loop (triggers fire on each INSERT),
 -- validates cash amount, and registers payment — all in one atomic transaction.
+-- On any error the entire transaction is rolled back automatically by PostgreSQL.
 CREATE OR REPLACE PROCEDURE place_order(
     p_clientid      INTEGER,
     p_branchid      INTEGER,
@@ -1852,7 +1862,8 @@ BEGIN
     VALUES (p_clientid, CURRENT_DATE, p_branchid)
     RETURNING orderid INTO v_orderid;
 
-    -- Insert each order item (triggers validate stock and decrement quantity)
+    -- Insert each order item; triggers trg_check_stock and trg_order_decrease_stock
+    -- fire automatically on every INSERT into orderdetails
     FOR v_item IN SELECT * FROM json_array_elements(p_items) LOOP
         SELECT price INTO v_price
         FROM books WHERE bookid = (v_item->>'bookid')::INTEGER;
@@ -1881,6 +1892,12 @@ BEGIN
     -- Register payment
     INSERT INTO payments (clientid, amount, paymentdate, paymentmethod)
     VALUES (p_clientid, v_total, CURRENT_DATE, p_paymentmethod);
+
+EXCEPTION
+    WHEN OTHERS THEN
+        -- Re-raise the exception; PostgreSQL automatically rolls back all changes
+        -- made within this procedure call (orders, orderdetails, payments inserts)
+        RAISE;
 END;
 $$;
 ```
