@@ -73,7 +73,7 @@ async def login(body: LoginBody):
     by attempting a real PostgreSQL connection as that role.
     PostgreSQL itself validates the credentials and rejects on wrong password.
     """
-    async with get_conn("guest") as conn:
+    async with get_conn("admin") as conn:
         row = await conn.fetchrow(
             """SELECT userid, username, role, clientid, employeeid
                FROM users WHERE username = $1""",

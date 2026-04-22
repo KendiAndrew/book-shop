@@ -16,7 +16,7 @@ class BranchBody(BaseModel):
 
 @router.get("")
 async def get_branches():
-    async with get_conn("guest") as conn:
+    async with get_conn("admin") as conn:
         rows = await conn.fetch(
             """SELECT br.*,
                       e.firstname || ' ' || e.lastname AS manager

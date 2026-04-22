@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from database import get_pool, close_pool
+from database import get_pool, close_pools
 
 from routes.auth import router as auth_router
 from routes.books import router as books_router
@@ -31,9 +31,9 @@ from routes.suppliers import router as suppliers_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await get_pool()
+    await get_pool("guest")
     yield
-    await close_pool()
+    await close_pools()
 
 
 app = FastAPI(title="BookShop API", version="1.0.0", lifespan=lifespan)

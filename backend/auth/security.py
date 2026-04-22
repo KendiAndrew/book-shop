@@ -44,7 +44,11 @@ async def verify_db_credentials(app_role: str, password: str) -> bool:
     except (
         asyncpg.InvalidPasswordError,
         asyncpg.InvalidAuthorizationSpecificationError,
+        asyncpg.ConnectionDoesNotExistError,
+        OSError,
     ):
+        return False
+    except Exception:
         return False
 
 
