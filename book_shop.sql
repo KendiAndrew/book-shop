@@ -1,3 +1,4 @@
+\encoding UTF8
 --
 -- PostgreSQL: База даних "book_shop"
 -- Структура без тестових даних
@@ -123,6 +124,7 @@ CREATE TABLE books (
     languageid      INTEGER NOT NULL REFERENCES languages(languageid) ON DELETE RESTRICT,
     pagecount       INTEGER NOT NULL
                         CONSTRAINT books_pagecount_check CHECK (pagecount > 0),
+    cover_url       VARCHAR(500),
     created_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
 

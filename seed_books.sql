@@ -1,3 +1,4 @@
+\encoding UTF8
 -- Очистимо старі дані
 TRUNCATE orderdetails, orders, bookdeliveries, promotions, booklinks, books,
          clients, employees, branches, users, authors, genres, publishers, languages, suppliers
@@ -9,9 +10,9 @@ INSERT INTO branches (city, address, postcode) VALUES
   ('Львів', 'пр. Свободи, 28', '79000'),
   ('Одеса', 'Дерибасівська, 10', '65000');
 
--- Адмін (пароль: admin123)
-INSERT INTO users (username, password_hash, role)
-VALUES ('admin', '$2b$12$yfFSHNb/z/R0rx2c13TGkeYafzRPi81VRTtU.DUQ0teeqidJ1ot3e', 'admin');
+-- Admin user (password managed by PostgreSQL role bookshop_admin: 'admin123')
+INSERT INTO users (username, role)
+VALUES ('admin', 'admin');
 
 -- Працівники
 INSERT INTO employees (firstname, lastname, position, email, branchid) VALUES
