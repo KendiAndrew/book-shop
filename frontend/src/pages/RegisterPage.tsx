@@ -6,7 +6,7 @@ import { BookOpen, AlertCircle } from "lucide-react";
 
 export function RegisterPage() {
   const [form, setForm] = useState({
-    username: "", password: "", firstname: "", lastname: "",
+    username: "", firstname: "", lastname: "",
     email: "", phone: "+380", branchid: 1,
   });
   const [branches, setBranches] = useState<any[]>([]);
@@ -82,10 +82,9 @@ export function RegisterPage() {
               className="w-full px-4 py-2.5 bg-white border border-border text-sm placeholder:text-text-muted focus:outline-none focus:border-oak-500" />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-text mb-1.5">Пароль</label>
-            <input type="password" value={form.password} onChange={(e) => set("password", e.target.value)} required
-              className="w-full px-4 py-2.5 bg-white border border-border text-sm focus:outline-none focus:border-oak-500" />
+          <div className="flex items-start gap-2 p-3 bg-oak-50 border border-oak-200 text-sm text-oak-800">
+            <span>🔑</span>
+            <span>Пароль для входу для всіх користувачів: <strong>user123</strong></span>
           </div>
 
           {branches.length > 0 && (

@@ -107,4 +107,10 @@ async def create_order(body: OrderCreate, user: dict = Depends(require_user)):
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    return {"message": "Замовлення створено"}
+        # Отримуємо id щойно створеного замовлення
+        orderid = await conn.fetchval(
+            "SELECT orderid FROM orders WHERE clientid = $1 ORDER BY orderid DESC LIMIT 1",
+            client_id,
+        )
+
+    return {"message": "Замовлення створено", "orderid": orderid}

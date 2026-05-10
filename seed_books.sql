@@ -10,9 +10,13 @@ INSERT INTO branches (city, address, postcode) VALUES
   ('Львів', 'пр. Свободи, 28', '79000'),
   ('Одеса', 'Дерибасівська, 10', '65000');
 
--- Admin user (password managed by PostgreSQL role bookshop_admin: 'admin123')
-INSERT INTO users (username, role)
-VALUES ('admin', 'admin');
+-- Admin client profile (so admin can place orders)
+INSERT INTO clients (firstname, lastname, email, phone, branchid)
+VALUES ('Admin', 'Administrator', 'admin@bookshop.ua', '+380000000000', 1);
+
+-- Admin user linked to client (password managed by PostgreSQL role bookshop_admin: 'admin123')
+INSERT INTO users (username, role, clientid)
+VALUES ('admin', 'admin', 1);
 
 -- Працівники
 INSERT INTO employees (firstname, lastname, position, email, branchid) VALUES

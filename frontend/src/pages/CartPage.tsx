@@ -36,13 +36,14 @@ export function CartPage() {
     setOrdering(true);
     setError("");
     try {
+      const savedTotal = total; // зберігаємо до clearCart
       const res = await post("/api/orders", {
         branchid,
         items: items.map((i) => ({ bookid: i.bookid, quantity: i.quantity })),
         paymentmethod: paymentMethod,
       });
-      setOrderId(res.orderid);
-      setOrderTotal(res.total);
+      setOrderId(res.orderid ?? 0);
+      setOrderTotal(res.total ?? savedTotal);
       clearCart();
 
       if (paymentMethod === "Карта") {

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { get } from "../api/client";
 import { BookCard } from "../components/BookCard";
+import { useAuth } from "../context/AuthContext";
 import { BookOpen, ArrowRight, Library, Truck, CreditCard, Shield } from "lucide-react";
 
 function CoverOrFallback({ url, title, className, style }: { url?: string; title: string; className?: string; style?: React.CSSProperties }) {
@@ -26,6 +27,7 @@ function CoverOrFallback({ url, title, className, style }: { url?: string; title
 }
 
 export function HomePage() {
+  const { user } = useAuth();
   const [newBooks, setNewBooks] = useState<any[]>([]);
   const [popularBooks, setPopularBooks] = useState<any[]>([]);
   const [genres, setGenres] = useState<any[]>([]);
@@ -66,12 +68,14 @@ export function HomePage() {
                 >
                   Каталог <ArrowRight className="w-4 h-4" />
                 </Link>
-                <Link
-                  to="/register"
-                  className="inline-flex items-center gap-2 px-7 py-3.5 border border-oak-500 text-oak-200 font-medium hover:bg-oak-800 transition-colors no-underline"
-                >
-                  Реєстрація
-                </Link>
+                {!user && (
+                  <Link
+                    to="/register"
+                    className="inline-flex items-center gap-2 px-7 py-3.5 border border-oak-500 text-oak-200 font-medium hover:bg-oak-800 transition-colors no-underline"
+                  >
+                    Реєстрація
+                  </Link>
+                )}
               </div>
             </div>
 

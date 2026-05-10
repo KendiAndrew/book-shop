@@ -8,7 +8,7 @@
 
 - **Python** 3.11+
 - **Node.js** 18+
-- **PostgreSQL** 15+
+- **PostgreSQL** 15+ (рекомендовано 16+)
 
 ## Встановлення та запуск
 
@@ -24,11 +24,13 @@ cd book-shop
 Переконайтесь, що PostgreSQL запущений. Створіть базу та заповніть її:
 
 ```bash
-psql -h localhost -U postgres -c "CREATE DATABASE book_shop ENCODING 'UTF8';"
+psql -h localhost -U postgres -c "CREATE DATABASE book_shop ENCODING 'UTF8' TEMPLATE template0;"
 psql -h localhost -U postgres -d book_shop -f book_shop.sql
-psql -h localhost -U postgres -d book_shop -f seed.sql
 psql -h localhost -U postgres -d book_shop -f seed_books.sql
 ```
+
+> **Windows:** якщо `psql` не знайдено, вкажіть повний шлях:
+> `"C:\Program Files\PostgreSQL\16\bin\psql.exe"` або `"D:\postgresql\bin\psql.exe"`
 
 `book_shop.sql` автоматично створює три PostgreSQL-ролі з правом LOGIN:
 
@@ -81,8 +83,13 @@ Frontend буде доступний на `http://localhost:3001`
 
 ### 5. Тестовий вхід
 
-- **Адмін:** логін `admin`, пароль `admin123`
-- **Нові клієнти** реєструються через форму реєстрації (пароль — `user123`, спільний для ролі bookshop_user)
+| Роль | Логін | Пароль |
+|---|---|---|
+| Адміністратор | `admin` | `admin123` |
+| Новий клієнт | реєстрація через форму | `user123` |
+
+> Пароль `user123` є спільним для всіх клієнтів — це пароль PostgreSQL-ролі `bookshop_user`.  
+> Адмін також може робити замовлення як покупець.
 
 ### 6. Запуск тестів
 
@@ -119,8 +126,7 @@ book-shop/
 │       ├── pages/      # Сторінки (каталог, адмін, кошик)
 │       ├── components/ # Компоненти (навігація, захист маршрутів)
 │       └── api/        # HTTP клієнт
-├── book_shop.sql       # Схема БД + ролі + процедура place_order
-├── seed.sql            # Базові довідники та адмін
-├── seed_books.sql      # Каталог книг
+├── book_shop.sql       # Схема БД + ролі + тригери + процедура place_order
+├── seed_books.sql      # Початкові дані (95 книг, філії, адмін)
 └── test_access.py      # Тести DB-ролей та API (74 тест-кейси)
 ```

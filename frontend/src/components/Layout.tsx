@@ -22,7 +22,7 @@ const ADMIN_NAV = [
 
 export function Layout() {
   const { user, logout, isAdmin, isAuth } = useAuth();
-  const { count } = useCart();
+  const { count, clearCart } = useCart();
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -105,6 +105,7 @@ export function Layout() {
                       <div className="border-t border-border my-1" />
                       <button
                         onClick={() => {
+                          clearCart();
                           logout();
                           setUserMenuOpen(false);
                           navigate("/");
